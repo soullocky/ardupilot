@@ -33,6 +33,7 @@
 #include <AP_Compass/AP_Compass.h>
 #include <AP_Logger/AP_Logger.h>
 #include <AP_Vehicle/AP_Vehicle_Type.h>
+#include <RC_Channel/RC_Channel.h>
 
 extern const AP_HAL::HAL& hal;
 
@@ -90,7 +91,18 @@ AP_AHRS_DCM::update()
     // for high level navigation control. Apply trim such that a
     // positive trim value results in a positive vehicle rotation
     // about that axis (ie a negative offset)
+    // 此处提供了一种俯仰旋转的语法，经测试验证，方法可行且稳定，可用于姿态控制
+    Matrix3f board_rotation;                                    // 新加语句
+    float board_rotate_pitch = RC_Channels::get_radio_in(CH_6);       // 新加语句，俯仰获取遥控器第6通道信号
+    float board_rotate_roll = RC_Channels::get_radio_in(CH_5);       // 新加语句，滚转获取遥控器第5通道信号
+    board_rotate_pitch = (board_rotate_pitch -1515) *0.19f;                   // 新加语句，转换为最大倾斜角度80
+    board_rotate_roll = (board_rotate_roll -1515) *0.19f;                   // 新加语句，转换为最大倾斜角度80
+    //Matrix3f virtual_rotate;                                      // 新加语句
+    //virtual_rotate.from_axis_angle(Vector3f(sin(board_rotate_yaw), cos(board_rotate_yaw), 0), -board_rotate_pitch);   // 新加语句，轴角法表示转子旋转，角度为负表示旋转到虚拟水平姿态
+    board_rotation.from_euler(radians(board_rotate_roll), radians(board_rotate_pitch), radians(0));     //新加语句
+
     _body_dcm_matrix = _dcm_matrix * AP::ahrs().get_rotation_vehicle_body_to_autopilot_body();
+    _body_dcm_matrix =  _body_dcm_matrix * board_rotation;       //自定义旋转
     _body_dcm_matrix.to_euler(&roll, &pitch, &yaw);
 
     // pre-calculate some trig for CPU purposes:
@@ -187,6 +199,15 @@ void AP_AHRS_DCM::matrix_update(void)
     // the _P_gain() calculation, which can lead to a very large P
     // value
     _omega = _ins.get_gyro() + _omega_I;
+    Matrix3f board_rotation;                                    // 新加语句
+    float board_rotate_pitch = RC_Channels::get_radio_in(CH_6);       // 新加语句，俯仰获取遥控器第6通道信号
+    float board_rotate_roll = RC_Channels::get_radio_in(CH_5);       // 新加语句，滚转获取遥控器第5通道信号
+    board_rotate_pitch = (board_rotate_pitch -1515) *0.19f;                   // 新加语句，转换为最大倾斜角度80
+    board_rotate_roll = (board_rotate_roll -1515) *0.19f;                   // 新加语句，转换为最大倾斜角度80
+    //Matrix3f virtual_rotate;                                      // 新加语句
+    //virtual_rotate.from_axis_angle(Vector3f(sin(board_rotate_yaw), cos(board_rotate_yaw), 0), -board_rotate_pitch);   // 新加语句，轴角法表示转子旋转，角度为负表示旋转到虚拟水平姿态
+    board_rotation.from_euler(radians(board_rotate_roll), radians(board_rotate_pitch), radians(0));
+    _omega = board_rotation * _omega;
 }
 
 

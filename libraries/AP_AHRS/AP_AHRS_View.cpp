@@ -20,6 +20,7 @@
 
 #include "AP_AHRS_View.h"
 #include <stdio.h>
+#include <GCS_MAVLink/GCS.h>
 
 AP_AHRS_View::AP_AHRS_View(AP_AHRS &_ahrs, enum Rotation _rotation, float pitch_trim_deg) :
     rotation(_rotation),
@@ -60,6 +61,13 @@ void AP_AHRS_View::set_pitch_trim(float trim_deg) {
 // update state
 void AP_AHRS_View::update()
 {
+    Matrix3f board_rotation;                                    // 新加语句
+    float board_rotate_pitch = RC_Channels::get_radio_in(CH_6);       // 新加语句，俯仰获取遥控器第6通道信号
+    float board_rotate_roll = RC_Channels::get_radio_in(CH_5);       // 新加语句，滚转获取遥控器第5通道信号
+    board_rotate_pitch = (board_rotate_pitch -1515) *0.19f;                   // 新加语句，转换为最大倾斜角度80
+    board_rotate_roll = (board_rotate_roll -1515) *0.19f;                   // 新加语句，转换为最大倾斜角度80
+    board_rotation.from_euler(radians(board_rotate_roll), radians(board_rotate_pitch), radians(0));     //新加语句
+
     rot_body_to_ned = ahrs.get_rotation_body_to_ned();
     gyro = ahrs.get_gyro();
 
@@ -67,6 +75,12 @@ void AP_AHRS_View::update()
         rot_body_to_ned = rot_body_to_ned * rot_view_T;
         gyro = rot_view * gyro;
     }
+
+    rot_body_to_ned = rot_body_to_ned * board_rotation;
+    gyro = board_rotation * gyro;                               // 新加语句，陀螺仪数据进行自定义角度旋转
+
+    //gcs().send_text(MAV_SEVERITY_INFO,"%0.2f", gyro[1]);
+    //gcs().send_text(MAV_SEVERITY_INFO,"%0.2f", gyro[0]);
 
     rot_body_to_ned.to_euler(&roll, &pitch, &yaw);
 
@@ -84,7 +98,21 @@ void AP_AHRS_View::update()
 
 // return a smoothed and corrected gyro vector using the latest ins data (which may not have been consumed by the EKF yet)
 Vector3f AP_AHRS_View::get_gyro_latest(void) const {
-    return rot_view * ahrs.get_gyro_latest();
+    Matrix3f board_rotation;
+
+    Vector3f gyro_latest = ahrs.get_gyro_latest();              // 原有语句，获取最新的陀螺仪数据
+
+    float board_rotate_pitch = RC_Channels::get_radio_in(CH_6);       // 新加语句，俯仰获取遥控器第6通道信号
+    float board_rotate_roll = RC_Channels::get_radio_in(CH_5);       // 新加语句，滚转获取遥控器第5通道信号
+    board_rotate_pitch = (board_rotate_pitch -1515) *0.19f;                   // 新加语句，转换为最大倾斜角度80
+    board_rotate_roll = (board_rotate_roll -1515) *0.19f;                   // 新加语句，转换为最大倾斜角度
+    board_rotation.from_euler(radians(board_rotate_roll), radians(board_rotate_pitch), radians(0));     //新加语句
+
+    gyro_latest.rotate(rotation);                               // 原有语句，陀螺仪数据进行原本程序的角度旋转
+    gyro_latest = board_rotation * gyro_latest;                 // 陀螺仪数据进行自定义俯仰角度旋转
+
+    //gcs().send_text(MAV_SEVERITY_INFO,"%0.2f", gyro_latest.y);
+    return gyro_latest;
 }
 
 // rotate a 2D vector from earth frame to body frame
