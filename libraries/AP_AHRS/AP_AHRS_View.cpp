@@ -21,6 +21,7 @@
 #include "AP_AHRS_View.h"
 #include <stdio.h>
 #include <GCS_MAVLink/GCS.h>
+#include <RC_Channel/RC_Channel.h>
 
 AP_AHRS_View::AP_AHRS_View(AP_AHRS &_ahrs, enum Rotation _rotation, float pitch_trim_deg) :
     rotation(_rotation),

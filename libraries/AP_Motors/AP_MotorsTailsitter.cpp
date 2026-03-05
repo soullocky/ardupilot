@@ -171,6 +171,8 @@ uint32_t AP_MotorsTailsitter::get_motor_mask()
 // calculate outputs to the motors
 void AP_MotorsTailsitter::output_armed_stabilizing()
 {
+    uint8_t i;
+    
     float   roll_thrust;                // roll thrust input value, +/- 1.0
     float   pitch_thrust;               // pitch thrust input value, +/- 1.0
     float   yaw_thrust;                 // yaw thrust input value, +/- 1.0
@@ -183,7 +185,7 @@ void AP_MotorsTailsitter::output_armed_stabilizing()
     float   r_rate;
     //float   r_rate_abs;
     float   r_rate_re;
-    float   n_rate;
+    //float   n_rate;
     float   y_rate;
     float   thrust_max;                 // highest motor value
     float   thrust_min;                 // lowest motor value
@@ -236,7 +238,7 @@ void AP_MotorsTailsitter::output_armed_stabilizing()
         //r_rate_abs = - r_rate;
     }
     
-    y_rate = max(p_rate, r_rate);
+    y_rate = MAX(p_rate, r_rate);
 
     // sanity check throttle is above min and below current limited throttle
     if (throttle_thrust <= min_throttle_out) {
