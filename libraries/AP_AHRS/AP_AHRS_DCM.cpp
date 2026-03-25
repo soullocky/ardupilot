@@ -105,6 +105,16 @@ AP_AHRS_DCM::update()
     _body_dcm_matrix =  _body_dcm_matrix * board_rotation;       //自定义旋转
     _body_dcm_matrix.to_euler(&roll, &pitch, &yaw);
 
+    // yaw unwrap/平滑（单位：rad），防止360-0跳变
+    static float prev_yaw = 0;
+    float yaw_deg = degrees(yaw);
+    float prev_yaw_deg = degrees(prev_yaw);
+    float dy = wrap_180(yaw_deg - prev_yaw_deg);  // 最小角度差
+    float smooth_yaw_deg = prev_yaw_deg + dy;
+    prev_yaw = radians(smooth_yaw_deg);
+    // 保存平滑结果
+    yaw = prev_yaw;
+
     // pre-calculate some trig for CPU purposes:
     _cos_yaw = cosf(yaw);
     _sin_yaw = sinf(yaw);
@@ -186,7 +196,7 @@ void AP_AHRS_DCM::matrix_update(void)
     float dangle_dt;
     if (_ins.get_delta_angle(delta_angle, dangle_dt) && dangle_dt > 0) {
         _omega = delta_angle / dangle_dt;
-        _omega += _omega_I;
+        _omega += _omega_I;                     // 计算角速度
         _dcm_matrix.rotate((_omega + _omega_P + _omega_yaw_P) * dangle_dt);
     }
 
@@ -199,6 +209,8 @@ void AP_AHRS_DCM::matrix_update(void)
     // the _P_gain() calculation, which can lead to a very large P
     // value
     _omega = _ins.get_gyro() + _omega_I;
+
+    // 陀螺仪虚拟旋转
     Matrix3f board_rotation;                                    // 新加语句
     float board_rotate_pitch = RC_Channels::get_radio_in(CH_6);       // 新加语句，俯仰获取遥控器第6通道信号
     float board_rotate_roll = RC_Channels::get_radio_in(CH_5);       // 新加语句，滚转获取遥控器第5通道信号

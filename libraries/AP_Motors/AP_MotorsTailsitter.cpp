@@ -179,14 +179,14 @@ void AP_MotorsTailsitter::output_armed_stabilizing()
     float   throttle_thrust;            // throttle thrust input value, 0.0 - 1.0
     float   rotate_angle_pitch;               // 手动控制俯仰倾转角
     float   rotate_angle_roll;                // 手动控制滚转倾转角
-    float   p_rate;                       // 舵机俯仰控制权重，水平为0，朝下为1，朝上为-1
-    float   p_rate_re;
+    float   p_rate;                     // 舵机俯仰控制权重，水平为0，朝下为1，朝上为-1
+    float   p_rate_re;                  
     //float   p_rate_abs;
-    float   r_rate;
+    float   r_rate;                     // 舵机滚转控制权重，水平为0，朝右为1，朝左为-1
     //float   r_rate_abs;
     float   r_rate_re;
     //float   n_rate;
-    float   y_rate;
+    float   y_rate;                     // 舵机偏航控制权重，取p_rate和r_rate中较大值   
     float   thrust_max;                 // highest motor value
     float   thrust_min;                 // lowest motor value
     float   thr_adj = 0.0f;             // the difference between the pilot's desired throttle and throttle_thrust_best_rpy
@@ -205,7 +205,8 @@ void AP_MotorsTailsitter::output_armed_stabilizing()
 
     // 旋转角与俯仰控制权重
     rotate_angle_pitch = RC_Channels::get_radio_in(CH_6);   // 获取遥控器第6通道值
-    rotate_angle_pitch = (rotate_angle_pitch -1515) *0.0024f;    // 最大控制角度在AP_AHRS_VIEW和AP_AHRS_DCM中体现,遥控器输入1095——1934
+    float rotate_angle_pitch_rad = (rotate_angle_pitch -1515) *0.19f;   // 最大倾斜角度80
+    rotate_angle_pitch = rotate_angle_pitch_rad / 80;    // 最大控制角度在AP_AHRS_VIEW和AP_AHRS_DCM中体现,遥控器输入1095——1934
 
     p_rate = rotate_angle_pitch;
 
@@ -223,7 +224,8 @@ void AP_MotorsTailsitter::output_armed_stabilizing()
     
     // 旋转角与偏航控制权重
     rotate_angle_roll = RC_Channels::get_radio_in(CH_5);    // 获取遥控器第5通道值
-    rotate_angle_roll = (rotate_angle_roll -1515) *0.0024f;  // 最大控制角度在AP_AHRS_VIEW和AP_AHRS_DCM中体现,遥控器输入1095——1934
+    float rotate_angle_roll_rad = (rotate_angle_roll -1515) *0.19f;   // 最大倾斜角度80
+    rotate_angle_roll = rotate_angle_roll_rad / 80;  // 最大控制角度在AP_AHRS_VIEW和AP_AHRS_DCM中体现,遥控器输入1095——1934
     
     r_rate = rotate_angle_roll;
 
@@ -238,7 +240,16 @@ void AP_MotorsTailsitter::output_armed_stabilizing()
         //r_rate_abs = - r_rate;
     }
     
+    // 偏航系数
     y_rate = MAX(p_rate, r_rate);
+    // yaw耦合补偿：大角度时，yaw力矩会耦合到roll/pitch
+    // 假设倾转机构在高倾角时，yaw舵机产生额外roll/pitch力矩
+    float yaw_pitch_compensation = yaw_thrust * sinf(rotate_angle_pitch_rad) * 0.1f;  // 经验系数，调参
+    float yaw_roll_compensation = yaw_thrust * sinf(rotate_angle_roll_rad) * 0.1f;
+
+    // 应用补偿到pitch/roll控制
+    pitch_thrust += yaw_pitch_compensation;  // 抵消耦合
+    roll_thrust += yaw_roll_compensation;
 
     // sanity check throttle is above min and below current limited throttle
     if (throttle_thrust <= min_throttle_out) {
@@ -309,17 +320,17 @@ void AP_MotorsTailsitter::output_armed_stabilizing()
 
     // 倾转机构控制分配（保留 p_rate / r_rate 权重含义）
     // 基本舵机目标：手动期望角 + 舵机对姿态控制的贡献
-    _tilt_pitch[0]  = - rotate_angle_pitch * 0.7f + p_rate * pitch_thrust * 0.2f + y_rate * yaw_thrust * 0.02f;
-    _tilt_pitch[1]  = - rotate_angle_pitch * 0.7f - p_rate * pitch_thrust * 0.2f + y_rate * yaw_thrust * 0.02f;
-    _tilt_pitch[2]  = - rotate_angle_pitch * 0.7f + p_rate * pitch_thrust * 0.2f - y_rate * yaw_thrust * 0.02f;
-    _tilt_pitch[3]  = - rotate_angle_pitch * 0.7f - p_rate * pitch_thrust * 0.2f - y_rate * yaw_thrust * 0.02f;
+    _tilt_pitch[0]  = - rotate_angle_pitch * 0.7f + p_rate * pitch_thrust * 0.5f + y_rate * yaw_thrust * 0.04f;
+    _tilt_pitch[1]  = - rotate_angle_pitch * 0.7f - p_rate * pitch_thrust * 0.5f + y_rate * yaw_thrust * 0.04f;
+    _tilt_pitch[2]  = - rotate_angle_pitch * 0.7f + p_rate * pitch_thrust * 0.5f - y_rate * yaw_thrust * 0.04f;
+    _tilt_pitch[3]  = - rotate_angle_pitch * 0.7f - p_rate * pitch_thrust * 0.5f - y_rate * yaw_thrust * 0.04f;
 
     // 将一部分偏航映射到滚转舵机（差分）以生成偏航力矩，避免倾斜悬停时仅依赖电机差速
     // 映射方式：左右舵机加减 yaw_servo_component（具体机构映射视机械结构调整）
-    _tilt_roll[0] = - rotate_angle_roll * 0.7f - r_rate * roll_thrust * 0.2f - y_rate * yaw_thrust * 0.02f ;
-    _tilt_roll[1] = - rotate_angle_roll * 0.7f + r_rate * roll_thrust * 0.2f + y_rate * yaw_thrust * 0.02f;  
-    _tilt_roll[2] = - rotate_angle_roll * 0.7f + r_rate * roll_thrust * 0.2f - y_rate * yaw_thrust * 0.02f;
-    _tilt_roll[3] = - rotate_angle_roll * 0.7f - r_rate * roll_thrust * 0.2f + y_rate * yaw_thrust * 0.02f;
+    _tilt_roll[0] = - rotate_angle_roll * 0.7f - r_rate * roll_thrust * 0.4f - y_rate * yaw_thrust * 0.02f;
+    _tilt_roll[1] = - rotate_angle_roll * 0.7f + r_rate * roll_thrust * 0.4f + y_rate * yaw_thrust * 0.02f;  
+    _tilt_roll[2] = - rotate_angle_roll * 0.7f + r_rate * roll_thrust * 0.4f - y_rate * yaw_thrust * 0.02f;
+    _tilt_roll[3] = - rotate_angle_roll * 0.7f - r_rate * roll_thrust * 0.4f + y_rate * yaw_thrust * 0.02f;
     
     //gcs().send_text(MAV_SEVERITY_INFO,"%0.2f", _tilt_pitch[0]);
     /*_tilt_pitch[0]  = - rotate_angle_pitch * 0.7f;
